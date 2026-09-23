@@ -1,0 +1,8 @@
+CREATE TABLE events(
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    public_id CHAR(36) NOT NULL UNIQUE,
+    event_type VARCHAR(100) NOT NULL,
+    payload JSON NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at DATETIME NOT NULL
+)
