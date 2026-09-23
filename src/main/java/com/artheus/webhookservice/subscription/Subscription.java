@@ -23,10 +23,8 @@ public class Subscription {
     @Column(nullable = false, unique = true, updatable = false)
     private UUID publicId;
 
-    @NotBlank
     private String targetUrl;
 
-    @NotBlank
     private String eventType;
 
     private LocalDateTime createdAt;
