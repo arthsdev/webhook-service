@@ -14,3 +14,6 @@ spring:
           preferred_uuid_jdbc_type: CHAR
   flyway:
     enabled: true
+
+delivery-service:
+  base-url: ${DELIVERY_SERVICE_URL}

@@ -17,6 +17,7 @@ public class EventService {
     private final SubscriptionLookup subscriptionLookup;
     private final EventRepository eventRepository;
     private final Clock clock;
+    private final EventDispatcher eventDispatcher;
 
     @Transactional
     public EventResponse createEvent(EventRequest eventRequest) {
@@ -24,12 +25,7 @@ public class EventService {
 
         List<SubscriberInfo> subscribers = subscriptionLookup.findActiveByEventType(eventRequest.eventType());
 
-        if (subscribers.isEmpty()) {
-            event.markNoSubscribers();
-        }
-        // TODO: call delivery-service once it exists.
-        // On success -> event.dispatch(); on failure -> event.failDispatch();
-        // For now, events with subscribers stay RECEIVED.
+        eventDispatcher.dispatch(event, subscribers);
 
         eventRepository.save(event);
 
