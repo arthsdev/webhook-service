@@ -1,7 +1,9 @@
 package com.artheus.webhookservice.shared.exception;
 
+import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
+@Getter
 public abstract class ApplicationException extends RuntimeException {
 
     private final HttpStatus status;
@@ -9,9 +11,5 @@ public abstract class ApplicationException extends RuntimeException {
     protected ApplicationException(String message, HttpStatus status) {
         super(message);
         this.status = status;
-    }
-
-    public HttpStatus getStatus() {
-        return status;
     }
 }
