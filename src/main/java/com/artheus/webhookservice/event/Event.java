@@ -49,6 +49,10 @@ public class Event {
         status = EventStatus.DISPATCHED;
     }
 
+    public void partiallyDispatch() {
+        status = EventStatus.PARTIALLY_DISPATCHED;
+    }
+
     public void failDispatch() {
         status = EventStatus.DISPATCH_FAILED;
     }
