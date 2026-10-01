@@ -18,5 +18,12 @@ spring:
   flyway:
     enabled: true
 
+logging:
+  level:
+    com.artheus.webhookservice.shared.stream: DEBUG
+
 delivery-service:
   base-url: ${DELIVERY_SERVICE_URL}
+
+event-stream:
+  deliveries-key: ${EVENT_STREAM_DELIVERIES_KEY:webhook.deliveries.requested}
