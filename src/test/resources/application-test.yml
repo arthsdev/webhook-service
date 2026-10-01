@@ -1,0 +1,4 @@
+spring:
+  data:
+    redis:
+      url: redis://localhost:6379
