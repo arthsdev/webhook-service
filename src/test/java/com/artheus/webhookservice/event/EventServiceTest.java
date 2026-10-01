@@ -4,6 +4,7 @@ import com.artheus.webhookservice.shared.client.delivery.DeliveryDispatchResult;
 import com.artheus.webhookservice.shared.client.delivery.DeliveryServiceClient;
 import com.artheus.webhookservice.shared.contract.subscription.SubscriberInfo;
 import com.artheus.webhookservice.shared.contract.subscription.SubscriptionLookup;
+import com.artheus.webhookservice.shared.stream.EventStreamPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,12 +33,15 @@ class EventServiceTest {
     @Mock
     private DeliveryServiceClient deliveryServiceClient;
 
+    @Mock
+    private EventStreamPublisher eventStreamPublisher;
+
     private EventService eventService;
 
     @BeforeEach
     void setUp() {
         Clock fixedClock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
-        EventDispatcher eventDispatcher = new EventDispatcher(deliveryServiceClient);
+        EventDispatcher eventDispatcher = new EventDispatcher(deliveryServiceClient, eventStreamPublisher);
         eventService = new EventService(subscriptionLookup, eventRepository, fixedClock, eventDispatcher);
     }
 

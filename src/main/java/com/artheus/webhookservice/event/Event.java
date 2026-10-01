@@ -53,6 +53,10 @@ public class Event {
         status = EventStatus.PARTIALLY_DISPATCHED;
     }
 
+    public void queue(){
+        status = EventStatus.QUEUED;
+    }
+
     public void failDispatch() {
         status = EventStatus.DISPATCH_FAILED;
     }
