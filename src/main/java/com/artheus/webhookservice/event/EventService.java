@@ -32,6 +32,19 @@ public class EventService {
         return EventResponse.from(event);
     }
 
+    @Transactional
+    public EventResponse createEventAsync(EventRequest eventRequest) {
+        Event event = Event.create(eventRequest.eventType(), eventRequest.payload(), clock);
+
+        List<SubscriberInfo> subscribers = subscriptionLookup.findActiveByEventType(eventRequest.eventType());
+
+        eventDispatcher.dispatchAsync(event, subscribers);
+
+        eventRepository.save(event);
+
+        return EventResponse.from(event);
+    }
+
     @Transactional(readOnly = true)
     public EventResponse findByPublicId(UUID publicId) {
         Event event = eventRepository.findByPublicId(publicId)

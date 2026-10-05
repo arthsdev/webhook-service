@@ -40,6 +40,39 @@ public class EventController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(
+            summary = "Publish a new event asynchronously",
+            description = "Creates an event and publishes one delivery message per matching active subscription " +
+                    "to a Redis Stream, for the delivery-service to process later. " +
+                    "A 202 means the event was accepted for delivery, not that it was delivered. " +
+                    "Inspect the status field: QUEUED means every message reached the stream; " +
+                    "PARTIALLY_DISPATCHED, DISPATCH_FAILED or NO_SUBSCRIBERS " +
+                    "mean the broker did not accept all of them (or there was nothing to send)."
+    )
+    @ApiResponse(
+            responseCode = "202",
+            description = "Event accepted for asynchronous delivery (status reflects the dispatch outcome: " +
+                    "QUEUED, PARTIALLY_DISPATCHED, DISPATCH_FAILED or NO_SUBSCRIBERS). " +
+                    "The Location header points to the resource used to track the event."
+    )
+    @ApiResponse(
+            responseCode = "400",
+            description = "Invalid payload or validation error"
+    )
+    @PostMapping("/async")
+    public ResponseEntity<EventResponse> createEventAsync(
+            @RequestBody @Valid EventRequest eventRequest,
+            UriComponentsBuilder uriBuilder) {
+
+        EventResponse response = eventService.createEventAsync(eventRequest);
+
+        URI location = uriBuilder.path("/app/v1/events/{publicId}")
+                .buildAndExpand(response.publicId())
+                .toUri();
+
+        return ResponseEntity.accepted().location(location).body(response);
+    }
+
     @Operation(summary = "Find an event by its publicId")
     @ApiResponse(responseCode = "200", description = "Event found")
     @ApiResponse(responseCode = "404", description = "Event not found")
