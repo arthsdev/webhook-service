@@ -16,7 +16,7 @@ public record EventResponse(
         @Schema(description = "Event body, serialized as a JSON string", example = "{\"orderId\":123,\"productId\":10}")
         String payload,
 
-        @Schema(description = "Outcome of the dispatch attempt to matching subscriptions")
+        @Schema(description = "Outcome of handing the event over to its subscriptions: delivery-service accepted it (sync) or the stream accepted it (async, QUEUED)")
         EventStatus status,
 
         @Schema(description = "Timestamp when the event was created")

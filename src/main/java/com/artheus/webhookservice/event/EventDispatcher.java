@@ -4,6 +4,7 @@ import com.artheus.webhookservice.shared.client.delivery.DeliveryDispatchRequest
 import com.artheus.webhookservice.shared.client.delivery.DeliveryDispatchResult;
 import com.artheus.webhookservice.shared.client.delivery.DeliveryServiceClient;
 import com.artheus.webhookservice.shared.contract.subscription.SubscriberInfo;
+import com.artheus.webhookservice.shared.stream.EventStreamPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,7 @@ import java.util.List;
 public class EventDispatcher {
 
     private final DeliveryServiceClient deliveryServiceClient;
+    private final EventStreamPublisher eventStreamPublisher;
 
     public void dispatch(Event event, List<SubscriberInfo> subscribers) {
         if (subscribers.isEmpty()) {
@@ -29,6 +31,27 @@ public class EventDispatcher {
 
         if (successCount == subscribers.size()) {
             event.dispatch();
+        } else if (successCount == 0) {
+            event.failDispatch();
+        } else {
+            event.partiallyDispatch();
+        }
+    }
+
+    public void dispatchAsync(Event event, List<SubscriberInfo> subscribers) {
+        if (subscribers.isEmpty()) {
+            event.markNoSubscribers();
+            return;
+        }
+
+        long successCount = subscribers.stream()
+                .map(subscriber -> buildRequest(event, subscriber))
+                .map(eventStreamPublisher::publish)
+                .filter(DeliveryDispatchResult::accepted)
+                .count();
+
+        if (successCount == subscribers.size()) {
+            event.queue();
         } else if (successCount == 0) {
             event.failDispatch();
         } else {

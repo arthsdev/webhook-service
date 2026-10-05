@@ -1,9 +1,11 @@
 package com.artheus.webhookservice.event;
 
+import com.artheus.webhookservice.shared.client.delivery.DeliveryDispatchRequest;
 import com.artheus.webhookservice.shared.client.delivery.DeliveryDispatchResult;
 import com.artheus.webhookservice.shared.client.delivery.DeliveryServiceClient;
 import com.artheus.webhookservice.shared.contract.subscription.SubscriberInfo;
 import com.artheus.webhookservice.shared.contract.subscription.SubscriptionLookup;
+import com.artheus.webhookservice.shared.stream.EventStreamPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +20,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,12 +36,15 @@ class EventServiceTest {
     @Mock
     private DeliveryServiceClient deliveryServiceClient;
 
+    @Mock
+    private EventStreamPublisher eventStreamPublisher;
+
     private EventService eventService;
 
     @BeforeEach
     void setUp() {
         Clock fixedClock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
-        EventDispatcher eventDispatcher = new EventDispatcher(deliveryServiceClient);
+        EventDispatcher eventDispatcher = new EventDispatcher(deliveryServiceClient, eventStreamPublisher);
         eventService = new EventService(subscriptionLookup, eventRepository, fixedClock, eventDispatcher);
     }
 
@@ -100,4 +107,22 @@ class EventServiceTest {
         assertThat(response.status()).isEqualTo(EventStatus.PARTIALLY_DISPATCHED);
     }
 
+    @Test
+    void shouldCreateEventAsynchronouslyAndQueue() {
+        EventRequest request = new EventRequest("order.created", "{\"orderId\":123}");
+        SubscriberInfo subscriber = new SubscriberInfo(UUID.randomUUID(), "https://webhook.site/test");
+
+        when(subscriptionLookup.findActiveByEventType("order.created"))
+                .thenReturn(List.of(subscriber));
+
+        when(eventStreamPublisher.publish(any(DeliveryDispatchRequest.class)))
+                .thenReturn(new DeliveryDispatchResult(true));
+
+        EventResponse response = eventService.createEventAsync(request);
+
+        assertThat(response.status()).isEqualTo(EventStatus.QUEUED);
+        verify(eventStreamPublisher).publish(any(DeliveryDispatchRequest.class));
+        verify(eventRepository).save(any(Event.class));
+        verifyNoInteractions(deliveryServiceClient);
+    }
 }

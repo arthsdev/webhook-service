@@ -3,6 +3,9 @@ spring:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}
     username: ${DB_USER}
     password: ${DB_PASSWORD}
+  data:
+    redis:
+      url: ${REDIS_URL}
   jpa:
     open-in-view: false
     hibernate:
@@ -15,5 +18,12 @@ spring:
   flyway:
     enabled: true
 
+logging:
+  level:
+    com.artheus.webhookservice.shared.stream: DEBUG
+
 delivery-service:
   base-url: ${DELIVERY_SERVICE_URL}
+
+event-stream:
+  deliveries-key: ${EVENT_STREAM_DELIVERIES_KEY:webhook.deliveries.requested}
