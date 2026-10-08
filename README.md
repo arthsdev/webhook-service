@@ -1,5 +1,15 @@
 # Microservices Lab: Webhook Delivery System
 
+![Java](https://img.shields.io/badge/Java-ED8B00?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1-6DB33F?logo=springboot&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-Aiven-4479A1?logo=mysql&logoColor=white)
+![Redis Streams](https://img.shields.io/badge/Redis_Streams-Upstash-DC382D?logo=redis&logoColor=white)
+![Flyway](https://img.shields.io/badge/Flyway-migrations-CC0200?logo=flyway&logoColor=white)
+![Maven](https://img.shields.io/badge/Maven-C71A36?logo=apachemaven&logoColor=white)
+![OpenAPI](https://img.shields.io/badge/OpenAPI-Swagger_UI-85EA2D?logo=swagger&logoColor=black)
+![Testcontainers](https://img.shields.io/badge/Tests-Mockito_%2B_Testcontainers-2496ED?logo=docker&logoColor=white)
+![Oracle Cloud](https://img.shields.io/badge/Deployed_on-Oracle_Cloud-F80000?logo=oracle&logoColor=white)
+
 > A deliberately small distributed system, built to study what changes when an application stops being a single process and becomes a set of independent services.
 
 > **Resumo (PT-BR):** laboratório de sistemas distribuídos com dois serviços Spring Boot independentes, rodando em duas VMs na Oracle Cloud, que se comunicam por REST e por Redis Streams, cada um com o seu próprio banco. O objetivo é estudar o que muda quando uma aplicação deixa de ser um único processo: timeouts, falhas parciais, consistência eventual, retry e idempotência. É um projeto complementar ao [Kairos](https://github.com/arthsdev/kairos). A documentação completa dos experimentos está em inglês, abaixo.
