@@ -89,7 +89,7 @@ The message is **self-sufficient on purpose**: the delivery-service cannot query
 | 1 | Synchronous REST between two independent services | Done |
 | 2 | Database per service | Done |
 | 3 | Asynchronous events with Redis Streams | Done |
-| 4 | Service unavailable (delivery-service down) | Planned |
+| 4 | Service unavailable (delivery-service down) | Done |
 | 5 | Broker unavailable (Redis down) | Planned |
 | 6 | Retry of failed and pending messages | Planned |
 | 7 | Idempotency and duplicate messages | Planned |
@@ -192,6 +192,53 @@ Hibernate: insert into events (created_at,event_type,payload,public_id,status) v
 
 ---
 
+
+### Experiment 4: Service unavailable
+
+**Question:** what does the webhook-service do when the delivery-service does not answer, and what does the client see?
+
+"Unavailable" turned out to be two different failures, so I tested both on the real VMs:
+
+| Failure | How I simulated it |
+|---|---|
+| **Process stopped** | `systemctl stop delivery-service` on VM 2 (the port refuses connections) |
+| **Network drops packets** | removed the ingress rule that lets VM 1 reach port 8081 in the OCI security list (nobody answers) |
+
+**Results**
+
+| Scenario | Path | Result | Time |
+|---|---|---|---|
+| Delivery-service stopped | sync (`POST /events`) | `201`, `DISPATCH_FAILED` | ~1.1 s warm (6.8 s on the first, cold call) |
+| Delivery-service healthy | sync | `201`, `DISPATCHED` | ~1.9 s warm (8.4 s right after a restart) |
+| Packets dropped, **no timeout** | sync | no answer within 120 s (my client gave up); the server logged the failure only after more than 2 minutes | more than 2 min |
+| Packets dropped, **2 s connect timeout** | sync | `201`, `DISPATCH_FAILED` | 3.1 s |
+| Delivery-service stopped | async (`POST /events/async`) | `202`, `QUEUED` | ~1.4 s |
+
+- **Async keeps accepting while the other service is down.** Two events published while the delivery-service was stopped were accepted in ~1.4 s and delivered about 1 s after the consumer came back, roughly 25 minutes later. Nothing was lost and nothing had to be done by hand.
+- **The sync path has no retry.** An event that ended as `DISPATCH_FAILED` stayed that way after the delivery-service came back.
+- **The HTTP status does not tell the story.** The client gets `201` even when the delivery failed; the outcome is only in the `status` field of the body.
+  **What I changed because of it**
+
+1. **Timeouts.** `DeliveryServiceClient` was built with no timeouts, so a dropped network held the HTTP thread and, because `createEvent` is `@Transactional`, a database connection for minutes. It now has a 2 s connect timeout and a 10 s read timeout (`DELIVERY_SERVICE_CONNECT_TIMEOUT` and `DELIVERY_SERVICE_READ_TIMEOUT`). The read timeout is 10 s and not 5 s because the first call after a restart took 8.4 s; 5 s would have rejected calls that were about to succeed.
+2. **Readable failure log.** The warning printed `ex.getMessage()`, which was `null` for both failures. It now includes the event id, the subscription id and the root cause, so the two failures are distinguishable:
+```text
+Failed to dispatch to delivery-service [eventId=..., subscriptionId=...]: ConnectException (Connection refused: getsockopt)
+Failed to dispatch to delivery-service [eventId=..., subscriptionId=...]: ConnectException (HTTP connect timed out)
+```
+
+**Side findings on the 1 GB VMs**
+
+- Booting takes 62 to 68 s. `systemd` reports the service as started right away, but for about a minute it refuses connections, so a sync call in that window fails exactly like a stopped service. Every deploy opens that window; the async path is not affected, because the message waits in the stream.
+- A Java process stopped by `systemd` exits with code 143 (SIGTERM), which `systemd` reports as `failed`. A `SuccessExitStatus=143` override fixes the unit state.
+- The delivery-service stayed under 390 MB of memory at its peak with `-Xmx400m`.
+  **What I learned**
+
+- "Down" is not one failure. A stopped process fails in about a second; a dropped network hangs. Only a timeout puts a bound on the second one.
+- Without timeouts the caller inherits the slowest failure of its dependency, and here it also held a database connection while waiting.
+- A log line that says `null` is almost as bad as no log: "connection refused" and "connect timed out" point to different problems.
+- A timeout should come from measurements, not habit. The cold start of 8.4 s decided the 10 s read timeout.
+- The async path decouples availability, and the price is the meaning of the answer: `202` means "accepted", not "delivered".
+- A sync timeout can mark an event `DISPATCH_FAILED` while the delivery-service is still working on it, so the two services can disagree about the same event.
 ## Security notes
 
 - The delivery-service port is open only to the webhook-service's private address and to my own IP. The webhook-service is public so the API and Swagger can be demonstrated.
@@ -211,6 +258,11 @@ Hibernate: insert into events (created_at,event_type,payload,public_id,status) v
 | **Redis down at boot** stops the delivery-service from starting at all, HTTP endpoints included. Behavior on read errors while running is untested. | 5 |
 | **Malformed messages are discarded**, with no dead-letter stream. | 6 |
 | **Publish timeouts** are at their defaults, so an unreachable Redis could hold an HTTP request open. | 5 |
+| **No retry on the sync path.** A `DISPATCH_FAILED` event is final; nothing resends it. | 6 |
+| **A read timeout can create a false failure:** the delivery-service may finish after the webhook-service gave up, leaving the event `DISPATCH_FAILED` while the delivery succeeded. | 7, 8 |
+| **Startup window:** for about a minute after a restart the delivery-service accepts no connections, and sync calls in that window fail. | 6 |
+| **Sync dual write:** the event is saved *after* the call to the delivery-service. A crash in between leaves a delivery for an event the webhook-service never stored. | 9 |
+| **The same pair can be delivered twice over HTTP too:** `POST /deliveries` accepted the same `(event_id, subscription_id)` three times in manual tests, because there is no unique constraint. | 7 |
 
 ---
 
