@@ -2,6 +2,7 @@ package com.artheus.webhookservice.shared.client.delivery;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -29,7 +30,10 @@ public class DeliveryServiceClient {
             return new DeliveryDispatchResult(true);
 
         } catch (RestClientException ex) {
-            log.warn("Failed to dispatch to delivery-service: {}", ex.getMessage());
+            Throwable cause = NestedExceptionUtils.getMostSpecificCause(ex);
+            log.warn("Failed to dispatch to delivery-service [eventId={}, subscriptionId={}]: {} ({})",
+                    request.eventId(), request.subscriptionId(),
+                    cause.getClass().getSimpleName(), cause.getMessage());
             return new DeliveryDispatchResult(false);
         }
     }
