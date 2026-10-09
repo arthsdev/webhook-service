@@ -24,6 +24,8 @@ logging:
 
 delivery-service:
   base-url: ${DELIVERY_SERVICE_URL}
+  connect-timeout: ${DELIVERY_SERVICE_CONNECT_TIMEOUT:2s}
+  read-timeout: ${DELIVERY_SERVICE_READ_TIMEOUT:10s}
 
 event-stream:
   deliveries-key: ${EVENT_STREAM_DELIVERIES_KEY:webhook.deliveries.requested}
