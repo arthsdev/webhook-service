@@ -4,6 +4,7 @@ import com.artheus.webhookservice.shared.client.delivery.DeliveryDispatchRequest
 import com.artheus.webhookservice.shared.client.delivery.DeliveryDispatchResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamRecords;
@@ -53,7 +54,10 @@ public class EventStreamPublisher {
             return new DeliveryDispatchResult(true);
 
         } catch (DataAccessException e) {
-            log.warn("Failed to publish event to Redis stream [key={}]: {}", this.streamKey, e.getMessage());
+            Throwable cause = NestedExceptionUtils.getMostSpecificCause(e);
+            log.warn("Failed to publish to Redis stream [key={}, eventId={}, subscriptionId={}]: {} ({})",
+                    this.streamKey, request.eventId(), request.subscriptionId(),
+                    cause.getClass().getSimpleName(), cause.getMessage());
             return new DeliveryDispatchResult(false);
         }
     }
