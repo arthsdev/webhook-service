@@ -6,6 +6,8 @@ spring:
   data:
     redis:
       url: ${REDIS_URL}
+      timeout: ${REDIS_COMMAND_TIMEOUT:3s}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
   jpa:
     open-in-view: false
     hibernate:
