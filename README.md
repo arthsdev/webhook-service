@@ -1,14 +1,19 @@
 # Microservices Lab: Webhook Delivery System
 
-![Java](https://img.shields.io/badge/Java-ED8B00?logo=openjdk&logoColor=white)
+![Java 21](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1-6DB33F?logo=springboot&logoColor=white)
+![Hibernate](https://img.shields.io/badge/Hibernate-JPA-59666B?logo=hibernate&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-Aiven-4479A1?logo=mysql&logoColor=white)
 ![Redis Streams](https://img.shields.io/badge/Redis_Streams-Upstash-DC382D?logo=redis&logoColor=white)
 ![Flyway](https://img.shields.io/badge/Flyway-migrations-CC0200?logo=flyway&logoColor=white)
-![Maven](https://img.shields.io/badge/Maven-C71A36?logo=apachemaven&logoColor=white)
 ![OpenAPI](https://img.shields.io/badge/OpenAPI-Swagger_UI-85EA2D?logo=swagger&logoColor=black)
-![Testcontainers](https://img.shields.io/badge/Tests-Mockito_%2B_Testcontainers-2496ED?logo=docker&logoColor=white)
-![Oracle Cloud](https://img.shields.io/badge/Deployed_on-Oracle_Cloud-F80000?logo=oracle&logoColor=white)
+![Maven](https://img.shields.io/badge/Maven-C71A36?logo=apachemaven&logoColor=white)
+
+![JUnit 5](https://img.shields.io/badge/JUnit_5-25A162?logo=junit5&logoColor=white)
+![Mockito](https://img.shields.io/badge/Mockito-unit_tests-78A641)
+![Testcontainers](https://img.shields.io/badge/Testcontainers-Docker-2496ED?logo=docker&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-systemd-FCC624?logo=linux&logoColor=black)
+![Oracle Cloud](https://img.shields.io/badge/Oracle_Cloud-OCI-F80000)
 
 > A deliberately small distributed system, built to study what changes when an application stops being a single process and becomes a set of independent services.
 
@@ -90,7 +95,7 @@ The message is **self-sufficient on purpose**: the delivery-service cannot query
 | 2 | Database per service | Done |
 | 3 | Asynchronous events with Redis Streams | Done |
 | 4 | Service unavailable (delivery-service down) | Done |
-| 5 | Broker unavailable (Redis down) | Planned |
+| 5 | Broker unavailable (Redis down) | In progress |
 | 6 | Retry of failed and pending messages | Planned |
 | 7 | Idempotency and duplicate messages | Planned |
 | 8 | Eventual consistency, observed explicitly | Planned |
@@ -111,7 +116,7 @@ The message is **self-sufficient on purpose**: the delivery-service cannot query
 | some | `PARTIALLY_DISPATCHED` |
 | none | `DISPATCH_FAILED` |
 
-Both services expose OpenAPI documentation (Swagger UI) and have automated tests: unit tests with Mockito and integration tests with Testcontainers running a real MySQL (24 tests in this service and 13 in the delivery-service at the time of writing).
+Both services expose OpenAPI documentation (Swagger UI) and have automated tests: unit tests with Mockito and integration tests with Testcontainers running a real MySQL.
 
 ### Experiment 2: Database per service
 
@@ -190,9 +195,6 @@ Hibernate: insert into events (created_at,event_type,payload,public_id,status) v
 - Beans that need external infrastructure need an off switch for tests (`event-stream.consumer.enabled=false`), and integration tests should get a fake broker URL instead of the real one.
 - A status can only describe what this service knows. `QUEUED` stays `QUEUED` after a successful delivery because the real outcome lives in the other service's database.
 
----
-
-
 ### Experiment 4: Service unavailable
 
 **Question:** what does the webhook-service do when the delivery-service does not answer, and what does the client see?
@@ -217,10 +219,12 @@ Hibernate: insert into events (created_at,event_type,payload,public_id,status) v
 - **Async keeps accepting while the other service is down.** Two events published while the delivery-service was stopped were accepted in ~1.4 s and delivered about 1 s after the consumer came back, roughly 25 minutes later. Nothing was lost and nothing had to be done by hand.
 - **The sync path has no retry.** An event that ended as `DISPATCH_FAILED` stayed that way after the delivery-service came back.
 - **The HTTP status does not tell the story.** The client gets `201` even when the delivery failed; the outcome is only in the `status` field of the body.
-  **What I changed because of it**
+
+**What I changed because of it**
 
 1. **Timeouts.** `DeliveryServiceClient` was built with no timeouts, so a dropped network held the HTTP thread and, because `createEvent` is `@Transactional`, a database connection for minutes. It now has a 2 s connect timeout and a 10 s read timeout (`DELIVERY_SERVICE_CONNECT_TIMEOUT` and `DELIVERY_SERVICE_READ_TIMEOUT`). The read timeout is 10 s and not 5 s because the first call after a restart took 8.4 s; 5 s would have rejected calls that were about to succeed.
 2. **Readable failure log.** The warning printed `ex.getMessage()`, which was `null` for both failures. It now includes the event id, the subscription id and the root cause, so the two failures are distinguishable:
+
 ```text
 Failed to dispatch to delivery-service [eventId=..., subscriptionId=...]: ConnectException (Connection refused: getsockopt)
 Failed to dispatch to delivery-service [eventId=..., subscriptionId=...]: ConnectException (HTTP connect timed out)
@@ -231,7 +235,10 @@ Failed to dispatch to delivery-service [eventId=..., subscriptionId=...]: Connec
 - Booting takes 62 to 68 s. `systemd` reports the service as started right away, but for about a minute it refuses connections, so a sync call in that window fails exactly like a stopped service. Every deploy opens that window; the async path is not affected, because the message waits in the stream.
 - A Java process stopped by `systemd` exits with code 143 (SIGTERM), which `systemd` reports as `failed`. A `SuccessExitStatus=143` override fixes the unit state.
 - The delivery-service stayed under 390 MB of memory at its peak with `-Xmx400m`.
-  **What I learned**
+
+**A defect found along the way.** The delivery-service sent every payload as `text/plain;charset=ISO-8859-1`, which showed up in the headers the target received. A subscriber expecting JSON may not parse it, and accented characters were encoded in ISO-8859-1 while JSON is read as UTF-8. The delivery now declares `application/json` and sends UTF-8 bytes. Two tests fail without the fix, and an accented payload (`"ação"`) arrived intact at the target through the whole chain (webhook-service database, Redis, delivery-service database, delivery).
+
+**What I learned**
 
 - "Down" is not one failure. A stopped process fails in about a second; a dropped network hangs. Only a timeout puts a bound on the second one.
 - Without timeouts the caller inherits the slowest failure of its dependency, and here it also held a database connection while waiting.
@@ -239,6 +246,9 @@ Failed to dispatch to delivery-service [eventId=..., subscriptionId=...]: Connec
 - A timeout should come from measurements, not habit. The cold start of 8.4 s decided the 10 s read timeout.
 - The async path decouples availability, and the price is the meaning of the answer: `202` means "accepted", not "delivered".
 - A sync timeout can mark an event `DISPATCH_FAILED` while the delivery-service is still working on it, so the two services can disagree about the same event.
+
+---
+
 ## Security notes
 
 - The delivery-service port is open only to the webhook-service's private address and to my own IP. The webhook-service is public so the API and Swagger can be demonstrated.
@@ -251,18 +261,20 @@ Failed to dispatch to delivery-service [eventId=..., subscriptionId=...]: Connec
 | Limitation | Experiment |
 |---|---|
 | **Dual write:** the message is published before the event row is saved. A crash in between leaves a message for an event that does not exist. | 9 |
+| **Sync dual write:** the event is saved *after* the call to the delivery-service. A crash in between leaves a delivery for an event the webhook-service never stored. | 9 |
+| **The publish runs inside the HTTP request and its transaction.** With the Redis timeouts (2 s to connect, 3 s per command) an unreachable Redis costs about 3 s per subscription instead of 60 s, so the cost still grows with the number of subscriptions. A client that gives up does not cancel the work: the server keeps the request open until its timeouts expire. Only the Outbox takes Redis out of the request path. | 9 |
 | **`QUEUED` never changes** on this side, even after a successful delivery. | 8 |
 | **Pending messages are not redelivered.** The group reads with `lastConsumed()`, so a message left pending (failed `create()`, crash) is never retried. | 6 |
 | **Duplicate window:** a crash between `create()` and `XACK`, or a failed `XACK`, redelivers the message and creates a second `DeliveryAttempt`. There is no unique constraint on `(event_id, subscription_id)` yet. | 7 |
+| **The same pair can be delivered twice over HTTP too:** `POST /deliveries` accepted the same `(event_id, subscription_id)` three times in manual tests, because there is no unique constraint. | 7 |
 | **`XACK` means "persisted", not "delivered".** The HTTP delivery runs asynchronously after `create()`. | 6, 8 |
-| **Redis down at boot** stops the delivery-service from starting at all, HTTP endpoints included. Behavior on read errors while running is untested. | 5 |
-| **Malformed messages are discarded**, with no dead-letter stream. | 6 |
-| **Publish timeouts** are at their defaults, so an unreachable Redis could hold an HTTP request open. | 5 |
+| **A failed delivery to the subscriber is final.** A target that answers with an error (for example `429 Too Many Requests`) leaves the attempt as `FAILED`; nothing retries it. | 6 |
 | **No retry on the sync path.** A `DISPATCH_FAILED` event is final; nothing resends it. | 6 |
 | **A read timeout can create a false failure:** the delivery-service may finish after the webhook-service gave up, leaving the event `DISPATCH_FAILED` while the delivery succeeded. | 7, 8 |
 | **Startup window:** for about a minute after a restart the delivery-service accepts no connections, and sync calls in that window fail. | 6 |
-| **Sync dual write:** the event is saved *after* the call to the delivery-service. A crash in between leaves a delivery for an event the webhook-service never stored. | 9 |
-| **The same pair can be delivered twice over HTTP too:** `POST /deliveries` accepted the same `(event_id, subscription_id)` three times in manual tests, because there is no unique constraint. | 7 |
+| **Redis down at boot** stops the delivery-service from starting at all, HTTP endpoints included. Not yet measured. | 5 |
+| **The delivery-service health endpoint can take about 60 s to answer** while Redis is unreachable, because that service sets no Redis command timeout. | 5 |
+| **Malformed messages are discarded**, with no dead-letter stream. | 6 |
 
 ---
 
@@ -271,19 +283,37 @@ Failed to dispatch to delivery-service [eventId=..., subscriptionId=...]: Connec
 Requirements: JDK, Maven, Docker (Testcontainers), a MySQL database and a Redis instance.
 
 ```bash
-cp .env.example .env   # fill in the values
-mvn test
-mvn spring-boot:run
+mvn test               # unit and integration tests (Testcontainers needs Docker; no real database or Redis required)
+mvn spring-boot:run    # needs the variables below in the environment
 ```
+
+`.env.example` lists the variables to provide through the environment: exported in the shell, set in the IDE run configuration, or loaded with an `EnvironmentFile` under `systemd`, which is how it runs in production.
 
 | Variable | Purpose |
 |---|---|
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | this service's MySQL |
 | `DELIVERY_SERVICE_URL` | base URL of the delivery-service (sync path) |
+| `DELIVERY_SERVICE_CONNECT_TIMEOUT`, `DELIVERY_SERVICE_READ_TIMEOUT` | optional; timeouts of the sync call (defaults `2s` and `10s`) |
 | `REDIS_URL` | `rediss://...` URL of the Redis instance |
+| `REDIS_CONNECT_TIMEOUT`, `REDIS_COMMAND_TIMEOUT` | optional; Redis timeouts (defaults `2s` and `3s`) |
 | `EVENT_STREAM_DELIVERIES_KEY` | optional override of the stream key |
 
 The delivery-service must use the **same** `REDIS_URL` and stream key. If the two keys differ, the consumer reads an empty stream and nothing fails visibly.
+
+### Behavior flags (`application.yml`)
+
+| Property | Value | What it does |
+|---|---|---|
+| `spring.flyway.enabled` | `true` | Runs the Flyway migrations at startup. The schema is created and evolved by migrations only. |
+| `spring.jpa.hibernate.ddl-auto` | `validate` | Hibernate never changes the schema. It stops the startup if the entities do not match the migrated tables. |
+| `spring.jpa.open-in-view` | `false` | No database session is kept open through the web layer, so lazy loading has to happen inside the service. |
+| `spring.jpa.show-sql` | `true` | Prints every SQL statement. Useful while running the experiments, noisy in production. |
+| `spring.jpa.properties.hibernate.type.preferred_uuid_jdbc_type` | `CHAR` | UUIDs are stored as `CHAR(36)`, matching the `public_id` columns. |
+| `spring.data.redis.connect-timeout` | `2s` | How long a Redis connection attempt may take. |
+| `spring.data.redis.timeout` | `3s` | How long a Redis command may take. Without it, Lettuce waits 60 s while it tries to reconnect. |
+| `delivery-service.connect-timeout` | `2s` | How long the sync call may take to connect to the delivery-service. |
+| `delivery-service.read-timeout` | `10s` | How long the sync call waits for the answer. |
+| `logging.level.com.artheus.webhookservice.shared.stream` | `DEBUG` | Logs one line per published message (record id, event id, subscription id). |
 
 Swagger UI: `http://localhost:8080/swagger-ui.html`
 
@@ -291,4 +321,4 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`
 
 ## Stack
 
-Java, Spring Boot 4.1 (Spring MVC, Spring Data JPA, Spring Data Redis), MySQL on Aiven, Flyway, Redis Streams on Upstash, SpringDoc OpenAPI, Mockito, Testcontainers, Maven, Linux, `systemd`, Oracle Cloud Infrastructure.
+Java 21, Spring Boot 4.1 (Spring MVC, Spring Data JPA with Hibernate, Spring Data Redis), MySQL on Aiven, Flyway, Redis Streams on Upstash, SpringDoc OpenAPI, JUnit 5, Mockito, Testcontainers, Maven, Linux, `systemd`, Oracle Cloud Infrastructure.
